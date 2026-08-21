@@ -1,4 +1,4 @@
-import os
+import osimport os
 import time
 import zoneinfo
 from datetime import datetime
@@ -241,7 +241,6 @@ def render_scope_radar():
     today_str = now.strftime("%Y-%m-%d")
     market_active = is_market_open()
 
-    # Reset cache on new session date
     if 'scope_frozen_date' in st.session_state and st.session_state['scope_frozen_date'] != today_str:
         st.session_state.pop('scope_live_matrix', None)
         st.session_state.pop('scope_frozen_time', None)
@@ -279,46 +278,73 @@ def render_scope_radar():
     m2.metric("Tracked Sectors", len(scope_df))
     m3.metric("Total F&O Universe", len(filtered_stocks))
 
-    # --- Section 1: Scope Analysis Table with In-Page Scroll Anchors ---
-    st.subheader("Sector Scope Analysis Matrix")
-    
-    # Smooth CSS Scrolling
+    # --- Global Compact Styling for HTML Tables & Streamlit Dataframes ---
     st.markdown("""
     <style>
     html {
         scroll-behavior: smooth;
     }
+    
+    /* Global Compact Padding for Streamlit Dataframes */
+    [data-testid="stDataFrame"] div[role="gridcell"], 
+    [data-testid="stDataFrame"] div[role="columnheader"] {
+        padding: 2px 6px !important;
+        font-size: 12px !important;
+        line-height: 1.2 !important;
+    }
+
+    /* Clean Auto-Fit Dark/Light HTML Table */
+    .scope-table-container {
+        width: 100%;
+        overflow-x: auto;
+        margin-bottom: 15px;
+    }
+    
     .scope-table {
         width: 100%;
         border-collapse: collapse;
-        font-family: sans-serif;
-        font-size: 14px;
-        margin-bottom: 20px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 13px;
     }
+
     .scope-table th {
-        background-color: #f0f2f6;
-        color: #31333F;
-        padding: 10px;
+        background-color: rgba(150, 150, 150, 0.12);
+        color: var(--text-color, #e0e0e0);
+        padding: 5px 8px;
         text-align: left;
-        border-bottom: 2px solid #e6e9ef;
+        font-weight: 600;
+        border-bottom: 2px solid rgba(150, 150, 150, 0.25);
+        white-space: nowrap;
     }
+
     .scope-table td {
-        padding: 8px 10px;
-        border-bottom: 1px solid #e6e9ef;
+        padding: 4px 8px;
+        border-bottom: 1px solid rgba(150, 150, 150, 0.15);
+        color: var(--text-color, #d1d5db);
+        white-space: nowrap;
     }
+
+    .scope-table tr:hover {
+        background-color: rgba(150, 150, 150, 0.08);
+    }
+
     .scope-table a {
-        color: #ff4b4b;
+        color: #60a5fa;
         font-weight: 600;
         text-decoration: none;
     }
+
     .scope-table a:hover {
         text-decoration: underline;
+        color: #93c5fd;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # Build custom HTML table so internal `#` anchors trigger in-page scrolling instead of opening tabs
-    html_table = """<table class="scope-table">
+    # --- Section 1: Scope Analysis Table ---
+    st.subheader("Sector Scope Analysis Matrix")
+    
+    html_table = """<div class="scope-table-container"><table class="scope-table">
     <thead>
         <tr>
             <th>Sector Group</th>
@@ -350,7 +376,7 @@ def render_scope_radar():
             <td>{row['Score']}</td>
         </tr>"""
 
-    html_table += "</tbody></table>"
+    html_table += "</tbody></table></div>"
     st.markdown(html_table, unsafe_allow_html=True)
 
     def prepare_radar_df(stock_list, label_text):
@@ -375,6 +401,10 @@ def render_scope_radar():
         )
     }
 
+    # Helper function to compute direct pixel height for compact st.dataframe
+    def get_df_height(num_rows):
+        return 35 + (num_rows * 26)
+
     # --- Section 2: Strategic Radars ---
     col1, col2 = st.columns(2)
 
@@ -382,7 +412,13 @@ def render_scope_radar():
         st.subheader("🔥 Top True Alpha Momentum Leaders (Buy Focus)")
         filtered_stocks.sort(key=lambda x: x["alpha"], reverse=True)
         top_momentum = prepare_radar_df(filtered_stocks[:8], "INSTITUTIONAL ACCUMULATION")
-        st.dataframe(top_momentum, column_config=table_config, use_container_width=True, hide_index=True)
+        st.dataframe(
+            top_momentum,
+            column_config=table_config,
+            use_container_width=True,
+            hide_index=True,
+            height=get_df_height(len(top_momentum))
+        )
 
     with col2:
         st.subheader("🛡️ Defensive Radar: Top Iron Domes")
@@ -390,7 +426,13 @@ def render_scope_radar():
         defensive.sort(key=lambda x: x["alpha"], reverse=True)
         top_defensive = prepare_radar_df(defensive[:8], "SHIELDED FROM MARKET SELLOFF")
         if not top_defensive.empty:
-            st.dataframe(top_defensive, column_config=table_config, use_container_width=True, hide_index=True)
+            st.dataframe(
+                top_defensive,
+                column_config=table_config,
+                use_container_width=True,
+                hide_index=True,
+                height=get_df_height(len(top_defensive))
+            )
         else:
             st.info("No sectors are currently under systemic selling pressure (< -0.50%) to trigger defensive shields.")
 
@@ -399,7 +441,13 @@ def render_scope_radar():
     trend_riders.sort(key=lambda x: x["change"], reverse=True)
     top_riders = prepare_radar_df(trend_riders[:8], "STRONG MOMENTUM WITH SECTOR TAILWIND")
     if not top_riders.empty:
-        st.dataframe(top_riders, column_config=table_config, use_container_width=True, hide_index=True)
+        st.dataframe(
+            top_riders,
+            column_config=table_config,
+            use_container_width=True,
+            hide_index=True,
+            height=get_df_height(len(top_riders))
+        )
     else:
         st.info("No sectors are currently showing strong upward velocity (> +0.30%) to trigger Trend Riders.")
 
@@ -408,7 +456,6 @@ def render_scope_radar():
 
     sector_items = list(sector_map.items())
     
-    # Process sectors side-by-side in 2 columns
     for i in range(0, len(sector_items), 2):
         row_cols = st.columns(2)
         
@@ -447,7 +494,6 @@ def render_scope_radar():
 
             if sec_table_data:
                 with row_cols[col_idx]:
-                    # HTML Anchor target for direct in-page navigation
                     anchor_id = f"sector-{sector_name.lower().replace(' ', '-')}"
                     st.markdown(f'<div id="{anchor_id}"></div>', unsafe_allow_html=True)
                     
@@ -456,7 +502,8 @@ def render_scope_radar():
                             pd.DataFrame(sec_table_data),
                             column_config=table_config,
                             use_container_width=True,
-                            hide_index=True
+                            hide_index=True,
+                            height=get_df_height(len(sec_table_data))
                         )
 
 render_scope_radar()
