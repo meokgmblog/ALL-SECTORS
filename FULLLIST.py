@@ -276,10 +276,29 @@ def render_scope_radar():
     m2.metric("Tracked Sectors", len(scope_df))
     m3.metric("Total F&O Universe", len(filtered_stocks))
 
-    # --- Section 1: Scope Analysis Table ---
+    # --- Section 1: Scope Analysis Table with Direct Navigation Links ---
     st.subheader("Sector Scope Analysis Matrix")
-    display_scope = scope_df.drop(columns=["True Index %"]).rename(columns={"True Index % Str": "True Index %"})
-    st.dataframe(display_scope, use_container_width=True, hide_index=True)
+    
+    # Create HTML/Markdown target anchor links for instant navigation
+    display_scope = scope_df.copy()
+    display_scope["🎯 Go to Sector"] = display_scope["Sector Group"].apply(
+        lambda sec: f"[Jump to {sec}](#sector-{sec.lower().replace(' ', '-')})"
+    )
+    
+    display_scope = display_scope.drop(columns=["True Index %"]).rename(columns={"True Index % Str": "True Index %"})
+    cols_order = ["🎯 Go to Sector", "Sector Group", "Bullish", "Bearish", "Total", "Bullish %", "Bearish %", "True Index %", "Scope Multiplier", "Score"]
+    
+    st.dataframe(
+        display_scope[cols_order],
+        column_config={
+            "🎯 Go to Sector": st.column_config.LinkColumn(
+                "🎯 Jump to Breakdown",
+                help="Click to jump directly to this sector's stock radar below"
+            )
+        },
+        use_container_width=True,
+        hide_index=True
+    )
 
     def prepare_radar_df(stock_list, label_text):
         records = []
@@ -331,49 +350,61 @@ def render_scope_radar():
     else:
         st.info("No sectors are currently showing strong upward velocity (> +0.30%) to trigger Trend Riders.")
 
-    # --- Section 3: Sector-Wise Stocks Breakdown ---
+    # --- Section 3: Sector-Wise Stocks Breakdown (Side-by-Side 2-Column Grid Layout) ---
     st.subheader("📊 Sector-Wise Breakdown Radar (All Stocks)")
 
-    for sector_name, stock_symbols in sector_map.items():
-        norm_sec = str(sector_name).strip().upper().replace("BANKS", "BANK").replace("REALITY", "REALTY")
-        idx_inst = NORMALIZED_INDEX_MAP.get(norm_sec)
-        sec_idx_change = live_matrix.get(idx_inst)
+    sector_items = list(sector_map.items())
+    
+    # Process sectors in pairs (2 per row)
+    for i in range(0, len(sector_items), 2):
+        row_cols = st.columns(2)
+        
+        for col_idx, (sector_name, stock_symbols) in enumerate(sector_items[i:i+2]):
+            norm_sec = str(sector_name).strip().upper().replace("BANKS", "BANK").replace("REALITY", "REALTY")
+            idx_inst = NORMALIZED_INDEX_MAP.get(norm_sec)
+            sec_idx_change = live_matrix.get(idx_inst)
 
-        sec_stocks_list = []
-        for sym in stock_symbols:
-            k = instrument_map.get(sym)
-            chg = live_matrix.get(k)
-            if chg is not None:
-                sec_stocks_list.append((sym, chg))
+            sec_stocks_list = []
+            for sym in stock_symbols:
+                k = instrument_map.get(sym)
+                chg = live_matrix.get(k)
+                if chg is not None:
+                    sec_stocks_list.append((sym, chg))
 
-        if sec_idx_change is None and sec_stocks_list:
-            sec_idx_change = sum([s[1] for s in sec_stocks_list]) / len(sec_stocks_list)
-        elif sec_idx_change is None:
-            sec_idx_change = 0.00
+            if sec_idx_change is None and sec_stocks_list:
+                sec_idx_change = sum([s[1] for s in sec_stocks_list]) / len(sec_stocks_list)
+            elif sec_idx_change is None:
+                sec_idx_change = 0.00
 
-        sec_idx_change = round(sec_idx_change, 2)
-        sec_stocks_list.sort(key=lambda x: x[1], reverse=True)
+            sec_idx_change = round(sec_idx_change, 2)
+            sec_stocks_list.sort(key=lambda x: x[1], reverse=True)
 
-        sec_table_data = []
-        for sym, stock_chg in sec_stocks_list:
-            alpha = round(stock_chg - sec_idx_change, 2)
-            framework_label = "OUTPERFORMING" if alpha > 0 else "UNDERPERFORMING"
-            sec_table_data.append({
-                "CHART_URL": f"https://www.tradingview.com/chart/?symbol=NSE:{sym}&interval=5",
-                "Sector Peer Group": sector_name,
-                "Stock Ret %": f"{stock_chg:+.2f}%",
-                "Sector Ret %": f"{sec_idx_change:+.2f}%",
-                "Net Alpha Edge": f"{alpha:+.2f}%",
-                "Signal Framework": framework_label
-            })
+            sec_table_data = []
+            for sym, stock_chg in sec_stocks_list:
+                alpha = round(stock_chg - sec_idx_change, 2)
+                framework_label = "OUTPERFORMING" if alpha > 0 else "UNDERPERFORMING"
+                sec_table_data.append({
+                    "CHART_URL": f"https://www.tradingview.com/chart/?symbol=NSE:{sym}&interval=5",
+                    "Sector Peer Group": sector_name,
+                    "Stock Ret %": f"{stock_chg:+.2f}%",
+                    "Sector Ret %": f"{sec_idx_change:+.2f}%",
+                    "Net Alpha Edge": f"{alpha:+.2f}%",
+                    "Signal Framework": framework_label
+                })
 
-        if sec_table_data:
-            with st.expander(f"📁 **{sector_name.upper()}** ({len(sec_table_data)} Stocks)", expanded=False):
-                st.dataframe(
-                    pd.DataFrame(sec_table_data),
-                    column_config=table_config,
-                    use_container_width=True,
-                    hide_index=True
-                )
+            if sec_table_data:
+                with row_cols[col_idx]:
+                    # Markdown anchor target for direct link navigation from top table
+                    anchor_id = f"sector-{sector_name.lower().replace(' ', '-')}"
+                    st.markdown(f'<div id="{anchor_id}"></div>', unsafe_allow_html=True)
+                    
+                    # Open by default using expanded=True
+                    with st.expander(f"📁 **{sector_name.upper()}** ({len(sec_table_data)} Stocks)", expanded=True):
+                        st.dataframe(
+                            pd.DataFrame(sec_table_data),
+                            column_config=table_config,
+                            use_container_width=True,
+                            hide_index=True
+                        )
 
 render_scope_radar()
