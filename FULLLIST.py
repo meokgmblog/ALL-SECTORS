@@ -5,7 +5,6 @@ from datetime import datetime
 import pandas as pd
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 
 # ==========================================
 # PAGE CONFIGURATION
@@ -20,7 +19,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FNO_EXCEL_PATH = os.path.join(BASE_DIR, "FNO all list.xlsx")
 INSTRUMENTS_CSV_PATH = os.path.join(BASE_DIR, "instruments.csv")
 
-ACCESS_TOKEN = st.secrets.get("ACCESS_TOKEN", "eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI2M0FZSEUiLCJqdGkiOiI2YTMwY2UxNTY4ODI0Zjc3ZDc1NmU3NjgiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlzRXh0ZW5kZWQiOnRydWUsImlhdCI6MTc4MTU4MzM4MSwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxODEzMTgzMjAwfQ.IoRDQhbhcn3w9Fkw75N3eBSamLcaA8GcAhVjf5K-iL8")
+ACCESS_TOKEN = st.secrets.get(
+    "ACCESS_TOKEN",
+    "eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI2M0FZSEUiLCJqdGkiOiI2YTMwY2UxNTY4ODI0Zjc3ZDc1NmU3NjgiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlzRXh0ZW5kZWQiOnRydWUsImlhdCI6MTc4MTU4MzM4MSwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxODEzMTgzMjAwfQ.IoRDQhbhcn3w9Fkw75N3eBSamLcaA8GcAhVjf5K-iL8"
+)
 REFRESH_INTERVAL_SECONDS = 60
 IST = zoneinfo.ZoneInfo("Asia/Kolkata")
 
@@ -239,6 +241,7 @@ def render_scope_radar():
     today_str = now.strftime("%Y-%m-%d")
     market_active = is_market_open()
 
+    # Reset cache on new session date
     if 'scope_frozen_date' in st.session_state and st.session_state['scope_frozen_date'] != today_str:
         st.session_state.pop('scope_live_matrix', None)
         st.session_state.pop('scope_frozen_time', None)
@@ -276,42 +279,30 @@ def render_scope_radar():
     m2.metric("Tracked Sectors", len(scope_df))
     m3.metric("Total F&O Universe", len(filtered_stocks))
 
-    # --- Section 1: Scope Analysis Table + Interactive Jump Controller ---
+    # --- Section 1: Scope Analysis Table with Direct Navigation Links ---
     st.subheader("Sector Scope Analysis Matrix")
     
-    # Clean display dataframe
     display_scope = scope_df.copy()
+    
+    # Converts sector name into a direct anchor link for smooth scrolling
+    display_scope["Sector Group"] = display_scope["Sector Group"].apply(
+        lambda sec: f"[{sec}](#sector-{sec.lower().replace(' ', '-')})"
+    )
+    
     display_scope = display_scope.drop(columns=["True Index %"]).rename(columns={"True Index % Str": "True Index %"})
     cols_order = ["Sector Group", "Bullish", "Bearish", "Total", "Bullish %", "Bearish %", "True Index %", "Scope Multiplier", "Score"]
     
-    col_table, col_jump = st.columns([0.78, 0.22])
-    
-    with col_table:
-        st.dataframe(
-            display_scope[cols_order],
-            use_container_width=True,
-            hide_index=True
-        )
-        
-    with col_jump:
-        st.markdown("### 🎯 **Quick Jump**")
-        st.write("Select a sector to instantly scroll down to its detailed stock breakdown:")
-        
-        sector_list = ["-- Select Sector --"] + list(display_scope["Sector Group"])
-        selected_sector = st.selectbox("Navigate to Sector Breakdown:", sector_list, key="sector_navigator")
-        
-        if selected_sector and selected_sector != "-- Select Sector --":
-            target_id = f"sec-{selected_sector.lower().replace(' ', '-')}"
-            # JS scroll script execution
-            js_code = f"""
-            <script>
-                var target = window.parent.document.getElementById('{target_id}');
-                if (target) {{
-                    target.scrollIntoView({{behavior: 'smooth', block: 'start'}});
-                }}
-            </script>
-            """
-            components.html(js_code, height=0, width=0)
+    st.dataframe(
+        display_scope[cols_order],
+        column_config={
+            "Sector Group": st.column_config.LinkColumn(
+                "Sector Group",
+                help="Click any sector name to jump directly down to its breakdown radar"
+            )
+        },
+        use_container_width=True,
+        hide_index=True
+    )
 
     def prepare_radar_df(stock_list, label_text):
         records = []
@@ -363,12 +354,12 @@ def render_scope_radar():
     else:
         st.info("No sectors are currently showing strong upward velocity (> +0.30%) to trigger Trend Riders.")
 
-    # --- Section 3: Sector-Wise Stocks Breakdown (Side-by-Side 2-Column Grid Layout) ---
+    # --- Section 3: Sector-Wise Stocks Breakdown Grid ---
     st.subheader("📊 Sector-Wise Breakdown Radar (All Stocks)")
 
     sector_items = list(sector_map.items())
     
-    # Process sectors side-by-side in 2 columns per row
+    # Process sectors in pairs (side-by-side)
     for i in range(0, len(sector_items), 2):
         row_cols = st.columns(2)
         
@@ -407,11 +398,10 @@ def render_scope_radar():
 
             if sec_table_data:
                 with row_cols[col_idx]:
-                    # Target anchor for automatic scrolling
-                    sec_id = f"sec-{sector_name.lower().replace(' ', '-')}"
-                    st.markdown(f'<div id="{sec_id}"></div>', unsafe_allow_html=True)
+                    # HTML Anchor ID for target scrolling
+                    anchor_id = f"sector-{sector_name.lower().replace(' ', '-')}"
+                    st.markdown(f'<div id="{anchor_id}"></div>', unsafe_allow_html=True)
                     
-                    # Opened by default with expanded=True
                     with st.expander(f"📁 **{sector_name.upper()}** ({len(sec_table_data)} Stocks)", expanded=True):
                         st.dataframe(
                             pd.DataFrame(sec_table_data),
