@@ -279,30 +279,79 @@ def render_scope_radar():
     m2.metric("Tracked Sectors", len(scope_df))
     m3.metric("Total F&O Universe", len(filtered_stocks))
 
-    # --- Section 1: Scope Analysis Table with Direct Navigation Links ---
+    # --- Section 1: Scope Analysis Table with In-Page Scroll Anchors ---
     st.subheader("Sector Scope Analysis Matrix")
     
-    display_scope = scope_df.copy()
-    
-    # Converts sector name into a direct anchor link for smooth scrolling
-    display_scope["Sector Group"] = display_scope["Sector Group"].apply(
-        lambda sec: f"[{sec}](#sector-{sec.lower().replace(' ', '-')})"
-    )
-    
-    display_scope = display_scope.drop(columns=["True Index %"]).rename(columns={"True Index % Str": "True Index %"})
-    cols_order = ["Sector Group", "Bullish", "Bearish", "Total", "Bullish %", "Bearish %", "True Index %", "Scope Multiplier", "Score"]
-    
-    st.dataframe(
-        display_scope[cols_order],
-        column_config={
-            "Sector Group": st.column_config.LinkColumn(
-                "Sector Group",
-                help="Click any sector name to jump directly down to its breakdown radar"
-            )
-        },
-        use_container_width=True,
-        hide_index=True
-    )
+    # Smooth CSS Scrolling
+    st.markdown("""
+    <style>
+    html {
+        scroll-behavior: smooth;
+    }
+    .scope-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: sans-serif;
+        font-size: 14px;
+        margin-bottom: 20px;
+    }
+    .scope-table th {
+        background-color: #f0f2f6;
+        color: #31333F;
+        padding: 10px;
+        text-align: left;
+        border-bottom: 2px solid #e6e9ef;
+    }
+    .scope-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #e6e9ef;
+    }
+    .scope-table a {
+        color: #ff4b4b;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    .scope-table a:hover {
+        text-decoration: underline;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Build custom HTML table so internal `#` anchors trigger in-page scrolling instead of opening tabs
+    html_table = """<table class="scope-table">
+    <thead>
+        <tr>
+            <th>Sector Group</th>
+            <th>Bullish</th>
+            <th>Bearish</th>
+            <th>Total</th>
+            <th>Bullish %</th>
+            <th>Bearish %</th>
+            <th>True Index %</th>
+            <th>Scope Multiplier</th>
+            <th>Score</th>
+        </tr>
+    </thead>
+    <tbody>"""
+
+    for _, row in scope_df.iterrows():
+        sec = row["Sector Group"]
+        anchor_target = f"sector-{str(sec).lower().replace(' ', '-')}"
+        html_table += f"""
+        <tr>
+            <td><a href="#{anchor_target}">{sec}</a></td>
+            <td>{row['Bullish']}</td>
+            <td>{row['Bearish']}</td>
+            <td>{row['Total']}</td>
+            <td>{row['Bullish %']}</td>
+            <td>{row['Bearish %']}</td>
+            <td>{row['True Index % Str']}</td>
+            <td>{row['Scope Multiplier']}</td>
+            <td>{row['Score']}</td>
+        </tr>"""
+
+    html_table += "</tbody></table>"
+    st.markdown(html_table, unsafe_allow_html=True)
 
     def prepare_radar_df(stock_list, label_text):
         records = []
@@ -359,7 +408,7 @@ def render_scope_radar():
 
     sector_items = list(sector_map.items())
     
-    # Process sectors in pairs (side-by-side)
+    # Process sectors side-by-side in 2 columns
     for i in range(0, len(sector_items), 2):
         row_cols = st.columns(2)
         
@@ -398,7 +447,7 @@ def render_scope_radar():
 
             if sec_table_data:
                 with row_cols[col_idx]:
-                    # HTML Anchor ID for target scrolling
+                    # HTML Anchor target for direct in-page navigation
                     anchor_id = f"sector-{sector_name.lower().replace(' ', '-')}"
                     st.markdown(f'<div id="{anchor_id}"></div>', unsafe_allow_html=True)
                     
